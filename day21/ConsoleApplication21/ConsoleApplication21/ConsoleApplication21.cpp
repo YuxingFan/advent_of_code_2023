@@ -16,14 +16,9 @@ static const char semiDelimiter = ';';
 static const char commaDelimiter = ',';
 static const char verticalDelimiter = '|';
 
-// part one needed variables
 static const int buttonModulePress = 1000;
 long long highPulse = 0;
 long long lowPulse = 0;
-
-// part two needed variables
-bool sentLowPulseToRx = false;
-long long buttonPressed = 0;
 
 // the module connection <module_name, destination_names>
 map<string, vector<string>> destinationMap;
@@ -65,24 +60,12 @@ int main()
 
     // find input modules for each conjunction module
     findInputsForConjunctionModules();
-
-    // get result for part one
-    /*
     for (int index = 0; index < buttonModulePress; index++)
     {
         pressButton();
     }
+
     std::cout << "highPulse * lowPulse = " << highPulse * lowPulse << endl;
-    */
-
-    // get result for part two
-    while (!sentLowPulseToRx)
-    {
-        pressButton();
-    }
-    std::cout << "Number of press needed to send low pulse to rx " << buttonPressed << endl;
-
-    
 }
 
 void analyze(string& configuration)
@@ -149,8 +132,6 @@ void pressButton()
 {
     // count the number of pulse
     lowPulse++;
-    // count the number of button pressed (needed for part two)
-    buttonPressed++;
     // the pulses to be handled
     // <source, inpulse, destination>
     deque<tuple<string, bool, string>> pulses;
@@ -248,16 +229,6 @@ vector<tuple<string, bool, string>> handlePulse(tuple<string, bool, string>& cur
     }
 
     // if there is no information about the type of the module
-
     //cout << "Unknown module type! " << "Module name: " << destModuleName << endl;
-    //cout << "Pulse type: " << pulse << endl;
-
-    // needed for part two
-    // if low pulse sent to rx
-    if (!pulse && destModuleName.compare("rx") == 0)
-    {
-        sentLowPulseToRx = true;
-    }
-
     return ret;
 }
