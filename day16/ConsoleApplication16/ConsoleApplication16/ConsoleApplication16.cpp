@@ -6,32 +6,43 @@
 #include <map>
 #include <set>
 #include <algorithm>
+#include <tuple>
+#include <deque>
 using namespace std;
 
-static const char delimiter = ':';
-static const char spaceDelimiter = ' ';
-static const char semiDelimiter = ';';
-static const char commaDelimiter = ',';
-static const char verticalDelimiter = '|';
+// The input grid
+vector<string> grid;
 
-std::set<std::pair<long, long>> visitedPosition;
-std::map<std::pair<long, long>, int> passedPoints;
-std::map<std::pair<long, long>, int> passedBackSlashs;
-std::map<std::pair<long, long>, int> passedForwardSlashs;
-std::map<std::pair<long, long>, int> passedBackVerSpliters;
-std::map<std::pair<long, long>, int> passedBackHorSpliters;
+// The minimum/maximum allowed row/col index
+long minRowIndex = 0;
+long maxRowIndex = 0;
+long minColIndex = 0;
+long maxColIndex = 0;
+
+// record if a tile has been visited or not. The directions to visit the tile have also been recorded
+// <<row, col>, directions> 
+// directions can be N/W/S/E
+std::map<std::pair<long, long>, set<char>> visitedPositionAndDirection;
+
+// the possitions where beam starts
+vector<tuple<long, long, char>> possibleStartPositions;
+
+// handle the visit of a tile
+vector<tuple<long, long, char>> handleVisit(tuple<long, long, char>& currentTileToVisit);
+
+// get all possible start positions
+void getAllPossibleStartPositions(bool isPartOne);
 
 int main()
 {
     // read file
-    std::ifstream infile("example.txt");
+    std::ifstream infile("day16.txt");
     if (!infile.is_open())
     {
         std::cout << "Open file failed!" << std::endl;
     }
 
     // read all lines
-    vector<string> grid;
     std::string line;
     while (std::getline(infile, line))
     {
@@ -40,135 +51,242 @@ int main()
             grid.push_back(line);
         }
     }
+    
+    // set max row index and max col index
+    maxRowIndex = grid.size() - 1;
+    maxColIndex = grid.front().size() - 1;
 
-    //long long numOfRows = grid.size();
-    //long long numOfColumns = grid.front().size();
-    std::pair<long, long> currentPosition = std::make_pair(0, 0);
-    char currentDirecction = 'E';
-    std::pair<std::pair<long, long>, char> beamProperty = std::make_pair(currentPosition, currentDirecction);
+    // get all possible start positions, it is different between part one and part two
+    // true => part one, false => part two
+    getAllPossibleStartPositions(false);
+    // the maximum visited tiles when start from different positions
+    long long maxVisitedTiles = 0;
+    // debug output
+    long long visitedStartPosition = 0;
 
-    std::vector<std::pair<std::pair<long, long>, char>> totalBeams;
-    totalBeams.push_back(beamProperty);
-
-    while (!totalBeams.empty())
+    // iterate the possible start positions
+    for (auto iterStartPosition = possibleStartPositions.begin(); iterStartPosition != possibleStartPositions.end(); iterStartPosition++)
     {
-        auto iter = totalBeams.begin();
-        auto& currentBeam = *iter;
+        /* debug info */
+        visitedStartPosition++;
+        std::cout << "visited start position" << visitedStartPosition << " " << std::get<0>(*iterStartPosition) << " " << std::get<1>(*iterStartPosition) << endl;
+        /***************/
+        // reset the map for different start position
+        visitedPositionAndDirection.clear();
+        // tiles to be visited
+        deque<tuple<long, long, char>> tilesToVisit;
+        // initialize with the start position
+        tilesToVisit.push_back(*iterStartPosition);
 
-        auto currentPosition = currentBeam.first;
-        auto currentDirection = currentBeam.second;
-
-        // not visited yet
-        if (visitedPosition.find(currentPosition) == visitedPosition.end())
+        // if there are still tiles to visit
+        while (!tilesToVisit.empty())
         {
-            char currentTile = grid.at(currentPosition.first).at(currentPosition.second);
-            addVisitRecord(currentPosition, currentDirection, currentTile);
+            // get the first tile from the queue
+            tuple<long, long, char> currentTileToVisit = tilesToVisit.front();
+            // handle the visit
+            auto ret = handleVisit(currentTileToVisit);
+            // if there will be new tiles to visit, add them to the queue
+            if (!ret.empty())
+            {
+                tilesToVisit.insert(tilesToVisit.end(), ret.begin(), ret.end());
+            }
+            // remove the visited tile
+            tilesToVisit.pop_front();
         }
 
-        bool stop = stopFurtherSearch(currentBeam, grid);
-
-
-        if (stop)
+        // all possible tiles have been visited, check how many tiles can be visited from this start position
+        if (visitedPositionAndDirection.size() > maxVisitedTiles)
         {
-            totalBeams.erase(iter);
-        }
-    }
-
-    // the vector used to store the total load of each column
-    vector<long long> totalLoadOfColumn(numOfColumns, 0);
-    // the load for next 'O'
-    vector<long long> nextLoadOfColumn(numOfColumns, maxLoad);
-
-    // iterate rows
-    for (auto iter = grid.begin(); iter != grid.end(); iter++)
-    {
-        // iterate columns
-        for (size_t index = 0; index < numOfColumns; index++)
-        {
-            if ((*iter)[index] == '.')
-            {
-                // do nothing
-            }
-            else if ((*iter)[index] == '#')
-            {
-                // reset the load for current column
-                nextLoadOfColumn.at(index) = maxLoad - (iter - grid.begin()) - 1;
-            }
-            else if ((*iter)[index] == 'O')
-            {
-                // add load for current column
-                totalLoadOfColumn.at(index) += nextLoadOfColumn.at(index);
-                // update load
-                nextLoadOfColumn.at(index) -= 1;
-
-            }
+            maxVisitedTiles = visitedPositionAndDirection.size();
         }
     }
 
-    // get result of partOne
-    long long sumOfAll = 0;
-    for (auto iter = totalLoadOfColumn.begin(); iter != totalLoadOfColumn.end(); iter++)
-    {
-        sumOfAll += *iter;
-    }
-
-    std::cout << "sumOfAll: " << sumOfAll;// << "    " << "sumOfBackHistory: " << sumOfBackHistory << std::endl;
+    
+    std::cout << "max visited tiles: " << maxVisitedTiles << endl;
     return 0;
 }
 
-void addVisitRecord(std::pair<long, long>& currentPosition, char currentDirection, char currentTile)
+vector<tuple<long, long, char>> handleVisit(tuple<long, long, char>& currentTileToVisit)
 {
-    if (currentTile == '.' && (currentDirection == 'E' || currentDirection == 'W'))
+    // return value
+    // used to store tiles to be visited next
+    vector<tuple<long, long, char>> ret;
+
+    // get information for current visit
+    long long row;
+    long long col;
+    char direction;
+    tie(row, col, direction) = currentTileToVisit;
+
+    // if the row or col index is out of range, cannot visit and return
+    if (row < minRowIndex || row > maxRowIndex || col < minColIndex || col > maxColIndex)
     {
-        passedPoints
-    }
-}
-
-void getNextPosition(std::pair<std::pair<long, long>, char>& currentProperty, std::pair<std::pair<long, long>, char>& nextProperty, vector<string>& grid)
-{
-
-}
-
-bool willExceedBorder(std::pair<std::pair<long, long>, char>& beamProperty, vector<string>& grid)
-{
-    auto currentPosition = beamProperty.first;
-    auto currentDirection = beamProperty.second;
-    char currentTile = grid.at(currentPosition.first).at(currentPosition.second);
-
-    //long long numOfRows = grid.size();
-    //long long numOfColumns = grid.front().size();
-
-}
-
-bool stopFurtherSearch(std::pair<std::pair<long, long>, char>& currentBeam, vector<string>& grid)
-{
-    bool ret;
-    auto currentPosition = currentBeam.first;
-    auto currentDirection = currentBeam.second;
-    char currentTile = grid.at(currentPosition.first).at(currentPosition.second);
-
-    long long numOfRows = grid.size();
-    long long numOfColumns = grid.front().size();
-
-    if (currentTile == '.')
-    {
-
-    }
-    else if (currentTile == '/')
-    {
-
-    }
-    else if (currentTile == '\\')
-    {
-
-    }
-    else if (currentTile == '-')
-    {
-
-    }
-    else if (currentTile == '|')
-    {
-
+        return ret;
     }
     
+    // check if the current tile has already been visited
+    auto tilePosition = make_pair(row, col);
+    // not ever been visited
+    if (visitedPositionAndDirection.find(tilePosition) == visitedPositionAndDirection.end())
+    {
+        visitedPositionAndDirection[tilePosition] = set<char>();
+        visitedPositionAndDirection[tilePosition].insert(direction);
+    }
+    // already visited, but not in current direction
+    else if (visitedPositionAndDirection[tilePosition].find(direction) == visitedPositionAndDirection[tilePosition].end())
+    {
+        visitedPositionAndDirection[tilePosition].insert(direction);
+    }
+    // already visited and in the same direction
+    else
+    {
+        // there is no need to visit again, return
+        return ret;
+    }
+  
+    
+    // get char of the current tile
+    char tile = grid.at(row).at(col);
+
+    // get the next tile(s) to visit according to current tile char and direction
+    switch (direction)
+    {
+    case 'N':
+        if (tile == '.')
+        {
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+        }
+        else if (tile == '/')
+        {
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+        }
+        else if (tile == '\\')
+        {
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+        }
+        else if (tile == '-')
+        {
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+        }
+        else if (tile == '|')
+        {
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+        }
+        else
+        {
+            cout << "something is wrong during visit handling" << endl;
+        }
+        break;
+    case 'W':
+        if (tile == '.')
+        {
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+        }
+        else if (tile == '/')
+        {
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+        }
+        else if (tile == '\\')
+        {
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+        }
+        else if (tile == '-')
+        {
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+        }
+        else if (tile == '|')
+        {
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+        }
+        else
+        {
+            cout << "something is wrong during visit handling" << endl;
+        }
+        break;
+    case 'S':
+        if (tile == '.')
+        {
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+        }
+        else if (tile == '/')
+        {
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+        }
+        else if (tile == '\\')
+        {
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+        }
+        else if (tile == '-')
+        {
+            ret.push_back(make_tuple(row, col - 1, 'W'));
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+        }
+        else if (tile == '|')
+        {
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+        }
+        else
+        {
+            cout << "something is wrong during visit handling" << endl;
+        }
+        break;
+    case 'E':
+        if (tile == '.')
+        {
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+        }
+        else if (tile == '/')
+        {
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+        }
+        else if (tile == '\\')
+        {
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+        }
+        else if (tile == '-')
+        {
+            ret.push_back(make_tuple(row, col + 1, 'E'));
+        }
+        else if (tile == '|')
+        {
+            ret.push_back(make_tuple(row - 1, col, 'N'));
+            ret.push_back(make_tuple(row + 1, col, 'S'));
+        }
+        else
+        {
+            cout << "something is wrong during visit handling" << endl;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return ret;
+}
+
+void getAllPossibleStartPositions(bool isPartOne)
+{
+    // part one
+    if (isPartOne)
+    {
+        possibleStartPositions.push_back(make_tuple(0, 0, 'E'));
+    }
+    // part two
+    else
+    {
+        for (int rowIndex = minRowIndex; rowIndex <= maxRowIndex; rowIndex++)
+        {
+            possibleStartPositions.push_back(make_tuple(rowIndex, minColIndex, 'E'));
+            possibleStartPositions.push_back(make_tuple(rowIndex, maxColIndex, 'W'));
+        }
+
+        for (int colIndex = minColIndex; colIndex <= maxColIndex; colIndex++)
+        {
+            possibleStartPositions.push_back(make_tuple(minRowIndex, colIndex, 'S'));
+            possibleStartPositions.push_back(make_tuple(maxRowIndex, colIndex, 'N'));
+        }
+    }
+
 }
